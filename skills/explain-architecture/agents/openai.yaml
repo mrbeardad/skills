@@ -1,0 +1,3 @@
+interface:
+  display_name: "Explain Architecture"
+  short_description: "Display architecture, sequences, and boundary data"
