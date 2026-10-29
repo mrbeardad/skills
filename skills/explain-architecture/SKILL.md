@@ -61,6 +61,17 @@ Detail mode adds only:
 Omit those additions in default mode. Show multiplicity in both modes wherever
 the selected level includes repeated actors or tasks.
 
+At every level, aggregate repeated actors only when their count is incidental
+or variable and their roles and relationships are interchangeable in the view.
+Keep distinct participants separate, especially opposite endpoints or actors
+with different ownership contexts, even when they run identical software.
+Count alone is not decisive: two interchangeable workers may be grouped, while
+a configurable population may still contain distinct roles. For one peer
+connection, the two endpoints and their respective local clients must remain
+separate: one initiates and the other receives, and each client serves its own
+game. Simplification must preserve who communicates with whom and must not
+imply a shared service, connection, or state that does not exist.
+
 ### High: conceptual overview
 
 Answer: who are the main characters, and what do they accomplish together?
@@ -83,6 +94,13 @@ Answer: what crosses a boundary to produce the behavior?
   distributes its file.
 - Label edges with the operation or data and its direction. Distinguish calls,
   requests, responses, events, and launches where the distinction matters.
+- Distinguish logical messages, protocol sessions, and transport connections.
+  State which interactions share a connection and which create separate
+  connections, even when they use the same server address and port. Label
+  connection purpose and multiplicity, for example `separate WebSocket per room`,
+  and show establishment and closure when relevant to the requested flow.
+  An aggregated edge must make its connection multiplicity explicit; endpoint
+  or port labels alone do not establish connection identity.
 - In architecture diagrams, represent a single bidirectional connection with
   one bidirectional edge by default. Label the transport and messages flowing
   each way. Use separate directional edges only when they clarify distinct
@@ -94,8 +112,9 @@ Answer: what crosses a boundary to produce the behavior?
   system components usually sit outside the project. Expand them when requested
   or central to the behavior. This does not hide file, network, or IPC boundaries
   merely because the program accesses them through an OS API.
-- Keep supporting I/O visible but subordinate. Do not remove requested
-  boundaries simply to make the protagonists stand out.
+- Keep supporting I/O visible but subordinate, including on optional and
+  fallback paths. Split diagrams when needed rather than omit relevant
+  participants or boundaries.
 
 ### Low: execution and communication
 
@@ -107,7 +126,7 @@ Answer: where does work run, and how do execution contexts communicate?
   a migrating task to a fixed worker. Mark unknown placement explicitly.
 - Show multiplicity when a thread or task role has more than one instance, such
   as `Worker threads x2` or `Reader tasks x active connections`. Aggregate roles
-  with identical behavior; separate instances when their behavior differs.
+  only when their behavior and relationships are interchangeable in the view.
   Distinguish fixed counts, dynamic counts, and configured maximums. Do not
   present a source-derived limit as an observed current count.
 - Show channels/queues with producers, consumers, direction, and carried data.
@@ -174,18 +193,19 @@ Use Mermaid for architecture and sequence diagrams, with supporting Markdown
 and source links. Split dense views into focused diagrams.
 
 In architecture diagrams, keep role nodes in the renderer's default style.
-Use the square queue shape for channel nodes and retain directional arrows.
-Apply the following direct style to each channel node:
+Use parallelograms for channel nodes to distinguish them from rectangular role
+nodes, and retain directional arrows. Use the renderer's default colors.
 
 ```mermaid
 flowchart LR
-    R["Role"] -->|"Message"| Q[["Channel"]]
-    style Q fill:#000E1A,stroke:#1A3E5F,color:#99CEFF
+    R["Role"] -->|"Message"| Q[/"Channel"/]
 ```
 
 Reserve cylinders for storage, not communication channels. Do not rely on shape
-to determine color or use `!important`. These explicit channel colors need not
-exactly match message labels, whose appearance is controlled by the renderer.
+or color alone to convey meaning; label each channel with its purpose or data.
+
+Avoid raw `;` in sequence messages and notes: Mermaid treats it as a statement
+separator. Use a comma or "and", or escape a literal semicolon as `#59;`.
 
 ## Deliver and check
 
@@ -196,8 +216,10 @@ Architecture explanation alone does not require changing code or running it.
 
 Before finishing, check that the reader can identify the protagonist and main
 path without relying on color; that each diagram has a coherent abstraction
-level and suitable form; that scoped I/O boundaries are covered; and that task
-placement, counts, and shared-state ownership agree with the evidence. In detail
-mode, also check channel capacities and appendix fields against the evidence.
-Check that boundary details remain discoverable through source links without
-overwhelming the main diagram.
+level and suitable form; that scoped I/O boundaries are covered; that shared and
+separate transport connections are distinguishable; and that task placement,
+counts, and shared-state ownership agree with the evidence. In detail
+mode, also
+check channel capacities and appendix fields against the evidence. Check that
+boundary details remain discoverable through source links without overwhelming
+the main diagram.
