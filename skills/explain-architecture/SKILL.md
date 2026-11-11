@@ -1,18 +1,21 @@
 ---
 name: explain-architecture
-description: "Display software architecture and execution workflows through layered architecture or sequence diagrams centered on protagonists, observable I/O, execution boundaries, and boundary data. Use to show a project's architecture, runtime flow, interactions, or concurrency for understanding or human review. A request for a specific schema, class diagram, or file map keeps its requested format."
+description: "Display software architecture and execution workflows through layered architecture diagrams, flowcharts, or sequence diagrams centered on protagonists, observable I/O, execution boundaries, and boundary data. Use to show a project's architecture, runtime flow, interactions, or concurrency for understanding or human review. A request for a specific schema, class diagram, or file map keeps its requested format."
 ---
 
 # Explain Architecture
 
 Make the reader see where to start, what the main actor wants, and how the system
-fulfills that objective. Choose nodes for their role in the behavior being
+fulfills that objective. Choose diagram elements for their role in the behavior being
 explained. Source files, classes, and crates are evidence or annotations unless
 the user specifically asks for that structural view.
 
 This skill governs display. Detail mode does not introduce review judgments,
 findings, verdicts, or proposed fixes. When a broader task includes a review,
 this skill governs its diagrams and supporting details only.
+
+Use Mermaid by default across all diagram forms, with supporting Markdown and
+source links. Honor an explicitly requested format.
 
 ## Establish the story and evidence
 
@@ -32,21 +35,48 @@ release, or observed runtime behavior when that distinction matters.
 Diagram form and detail level are separate choices:
 
 - Use an architecture diagram to show participants, responsibilities, and
-  connections.
-- Use a sequence diagram to show what happens in order, including conditions,
-  waits, responses, callbacks, and execution transfers relevant to the scope.
+  connections. Nodes represent roles or resources.
+- Use a flowchart to explain the execution paths of an interface, algorithm,
+  or business operation, especially its branches, retries, and recovery.
+  Nodes represent actions, decisions, or outcomes.
+- Use a sequence diagram to show the order of interactions across participants,
+  including conditions, waits, responses, callbacks, and execution transfers.
   Distinguish synchronous calls, queued messages, events, and shared-state
   access through labels or notation. Do not infer ordering from a connection.
-- Either form can use any of the three levels below. Follow an explicitly
-  requested form; otherwise choose the form that answers the question. Use both
-  only when they explain different things. A sequence lifeline can represent a
+- All forms can use any of the three levels below. Follow an explicitly
+  requested form; otherwise choose the form that answers the question. Combine
+  forms only when they explain different things. A sequence lifeline can represent a
   logical actor or repeated role; it does not imply a dedicated OS thread.
+
+Mermaid's `flowchart` syntax can also draw an architecture diagram; the syntax
+alone does not determine whether nodes describe roles or execution steps.
+
+## Trace a workflow
+
+- Identify the entry, success outcomes, and key failure exits. Give each action
+  node one coherent purpose and result.
+- Put explicit conditions in decision nodes and label outgoing branches with
+  their outcomes. Preserve the conditions that change the user's result.
+- Draw retries back to the step actually repeated, with the implemented attempt
+  or deadline limit. Distinguish definite rejection from an unknown commit result
+  and show the corresponding recovery; do not invent rollback or atomicity.
+- Mark asynchronous dispatch, cleanup, and compensation with their execution
+  boundaries and conditions. Do not imply that background work finishes before
+  a response or that cleanup runs only on success unless the evidence says so.
+- Split complex subprocesses into focused diagrams. Keep the parent's stage name,
+  entry, exits, and return position identifiable in the expanded view. Keep long
+  commands or payloads in adjacent annotations or tables rather than oversized nodes.
 
 ## Choose the level
 
 Use three levels of explanation. A broad architecture request can progress
 through all three; a focused request may need only one. Split dense levels by
 interaction or subsystem instead of merging everything into a single diagram.
+
+For flowcharts, the level determines how actions may be grouped and which
+boundaries must remain visible. A node need not match a function, file, or line
+of code. Do not merge away a boundary required at the chosen level. When zooming
+in, preserve the parent stage's name, entry, exits, and key outcomes.
 
 Default mode and detail mode are independent of these abstraction levels. Use
 default mode unless the user requests detail mode or its specific additions.
@@ -80,11 +110,16 @@ Answer: who are the main characters, and what do they accomplish together?
   span multiple processes or machines; do not force it into a process boundary.
 - Show the central objective and relationships. Leave implementation machinery
   for the next levels unless it is itself central to the requested concept.
+- In flowcharts, nodes are meaningful business stages with key decisions and
+  outcomes. A stage may span internal components or processes.
 
 ### Medium: observable interactions
 
 Answer: what crosses a boundary to produce the behavior?
 
+- In flowcharts, group processing within one participant or show an explicit
+  boundary interaction. Keep HTTP, RPC, database/cache, and file I/O visible
+  where relevant; do not hide multiple external calls inside one generic action.
 - Show all relevant observable boundaries within the requested scope: network
   I/O such as HTTP requests, IPC, file reads/writes, UI input/output, DLL or
   module loading, and process spawning. Include only categories actually present.
@@ -120,6 +155,9 @@ Answer: what crosses a boundary to produce the behavior?
 
 Answer: where does work run, and how do execution contexts communicate?
 
+- In flowcharts, nodes describe work within an execution context or an operation
+  on shared state. Expose relevant task handoffs, waits, connection ownership,
+  and transaction or synchronization boundaries rather than every code statement.
 - Show relevant threads and coroutine/async-task boundaries. Place tasks within
   their actual thread, event loop, executor, or worker pool. Distinguish blocking
   workers and dedicated threads. Do not imply one thread per coroutine or assign
@@ -176,9 +214,12 @@ Each diagram needs a clear entry point and visual hierarchy, even without color.
   A label saying "main actor" or "start here" is not a substitute for composition.
 - Preserve names and conceptual continuity while zooming in. A lower layer can
   have a new focal actor, but make clear which higher-level actor it expands.
-- If a rendered preview is available, check the actual reading order, crossings,
-  and legibility, not just the diagram source. Split or simplify a dense view
-  when automatic placement obscures the protagonists.
+- In node-link diagrams, prefer incoming and outgoing edges on different sides
+  of a node, ideally opposite sides along the main path: top-in/bottom-out or
+  left-in/right-out. Keep branches beside the main path and retries around its
+  outside where practical. Decisions, loops, and bidirectional links may need
+  exceptions. Simplify or split dense views without inventing actions, duplicating
+  shared resources, or changing relationships solely to influence layout.
 
 For example, a game SDK that lets a game use host features starts with the game
 as the primary actor and the host as the secondary actor, connected by the
@@ -189,8 +230,10 @@ can instead make the launcher the protagonist.
 
 ## Mermaid presentation
 
-Use Mermaid for architecture and sequence diagrams, with supporting Markdown
-and source links. Split dense views into focused diagrams.
+Mermaid direction declarations guide overall layout; they do not guarantee
+per-edge attachment sides. Treat edge separation as a best-effort composition
+goal, not a precise placement requirement. Do not render previews, capture
+screenshots, or perform visual verification as part of this workflow.
 
 In architecture diagrams, keep role nodes in the renderer's default style.
 Use parallelograms for channel nodes to distinguish them from rectangular role
@@ -203,6 +246,8 @@ flowchart LR
 
 Reserve cylinders for storage, not communication channels. Do not rely on shape
 or color alone to convey meaning; label each channel with its purpose or data.
+In flowcharts, use rectangles for actions, diamonds for decisions, and explicit
+entry/outcome labels; keep storage and channel shapes for those actual resources.
 
 Avoid raw `;` in sequence messages and notes: Mermaid treats it as a statement
 separator. Use a comma or "and", or escape a literal semicolon as `#59;`.
@@ -214,12 +259,11 @@ explanations focused on consequences the diagrams do not already make clear.
 Provide a few precise source references and disclose material evidence gaps.
 Architecture explanation alone does not require changing code or running it.
 
-Before finishing, check that the reader can identify the protagonist and main
-path without relying on color; that each diagram has a coherent abstraction
-level and suitable form; that scoped I/O boundaries are covered; that shared and
-separate transport connections are distinguishable; and that task placement,
-counts, and shared-state ownership agree with the evidence. In detail
-mode, also
-check channel capacities and appendix fields against the evidence. Check that
-boundary details remain discoverable through source links without overwhelming
-the main diagram.
+Before finishing, check the diagram source for valid syntax, a clear entry and
+main path, a coherent abstraction level, and a suitable form. Check scoped I/O
+boundaries, shared versus separate connections, task placement, multiplicity,
+and shared-state ownership against the evidence. For flowcharts, also check
+branch conditions, failure exits, retry targets and limits, and asynchronous or
+cleanup ordering. In detail mode, check channel capacities and appendix fields.
+Keep boundary definitions reachable through source links. These are source and
+semantic checks, not a rendered-layout acceptance gate.
