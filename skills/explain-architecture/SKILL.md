@@ -1,269 +1,155 @@
 ---
 name: explain-architecture
-description: "Display software architecture and execution workflows through layered architecture diagrams, flowcharts, or sequence diagrams centered on protagonists, observable I/O, execution boundaries, and boundary data. Use to show a project's architecture, runtime flow, interactions, or concurrency for understanding or human review. A request for a specific schema, class diagram, or file map keeps its requested format."
+description: "Display software architecture, execution workflows, and runtime concurrency through protagonist-centered Graphviz DOT diagrams (architecture and flowcharts) and Mermaid sequence diagrams focused on observable I/O, execution boundaries, and boundary data. Supports optional detail mode (channel capacities and boundary field tables). Honor any explicitly requested diagram tool or structural format (schema, class diagram, file map)."
 ---
 
 # Explain Architecture
 
-Make the reader see where to start, what the main actor wants, and how the system
-fulfills that objective. Choose diagram elements for their role in the behavior being
-explained. Source files, classes, and crates are evidence or annotations unless
-the user specifically asks for that structural view.
+Make the reader immediately see **where to start**, **what the primary actor wants**, and **how the system fulfills that objective**. Choose nodes for their behavioral role, resource identity, or execution step—not source files, classes, or crates, which serve only as evidence links unless the user explicitly asks for a structural map.
 
-This skill governs display. Detail mode does not introduce review judgments,
-findings, verdicts, or proposed fixes. When a broader task includes a review,
-this skill governs its diagrams and supporting details only.
+This skill governs **display only**. Even in detail mode, never introduce code-review judgments, bug findings, verdicts, or proposed fixes. Inside a broader review task, this skill governs only its diagrams and supporting factual details.
 
-Use Mermaid by default across all diagram forms, with supporting Markdown and
-source links. Honor an explicitly requested format.
+## 1. Establish Story and Evidence
 
-## Establish the story and evidence
+- **Derive prominence from purpose**: Identify the requested behavior, scope, **primary actor (protagonist)**, and **main secondary actor** from the system's goal and the user's question—never from code size, dependency count, or startup chronology.
+- **Ground every element in code**: Trace entry points, I/O calls, task creation/dispatch, channels, and shared state. Keep **implemented behavior**, **documented contracts**, **mocks**, and **external/unverified behavior** clearly distinguishable.
+- **Never invent machinery**: Do not fabricate network protocols, thread assignments, queue drop policies, rollback, or atomicity to make a diagram look complete. State whether the view reflects **current source**, a **shipped release**, or **observed runtime behavior** whenever they could differ.
 
-Identify the requested behavior, its scope, the primary actor, and the important
-secondary actor. Derive prominence from the system's purpose and the user's
-question, not source-code size, dependency count, or startup chronology.
+## 2. Select Form, Level, and Mode
 
-Trace the relevant entry points, I/O operations, task creation, dispatch,
-channels, and shared state in the available code. Keep implemented behavior,
-documented contracts, mocks, and external or unverified behavior distinguishable.
-Do not invent a network protocol, thread assignment, or service implementation
-to complete a diagram. State whether the view describes current source, a
-release, or observed runtime behavior when that distinction matters.
+Diagram **Form**, abstraction **Level**, and detail **Mode** are three orthogonal choices.
 
-## Choose the diagram form
+### 2.1 Diagram Form & Default Engine
 
-Diagram form and detail level are separate choices:
+Honor any explicitly requested tool or format (e.g., pure Mermaid, Draw.io, PlantUML, ASCII, schema, or class diagram). Otherwise route by question type:
 
-- Use an architecture diagram to show participants, responsibilities, and
-  connections. Nodes represent roles or resources.
-- Use a flowchart to explain the execution paths of an interface, algorithm,
-  or business operation, especially its branches, retries, and recovery.
-  Nodes represent actions, decisions, or outcomes.
-- Use a sequence diagram to show the order of interactions across participants,
-  including conditions, waits, responses, callbacks, and execution transfers.
-  Distinguish synchronous calls, queued messages, events, and shared-state
-  access through labels or notation. Do not infer ordering from a connection.
-- All forms can use any of the three levels below. Follow an explicitly
-  requested form; otherwise choose the form that answers the question. Combine
-  forms only when they explain different things. A sequence lifeline can represent a
-  logical actor or repeated role; it does not imply a dedicated OS thread.
+| Form | Default Engine | When to Use | Node / Lifeline Semantics |
+| :--- | :--- | :--- | :--- |
+| **Architecture** | **Graphviz DOT** (`rankdir=LR`) | Participants, responsibilities, boundaries, topology | Behavioral roles, processes, channels, storage |
+| **Flowchart** | **Graphviz DOT** (`rankdir=TB`) | Execution paths of an API, algorithm, or operation (branches, retries, recovery) | Coherent actions, explicit decisions, outcomes |
+| **Sequence** | **Mermaid** (`sequenceDiagram`) | Temporal interaction order, waits, callbacks, responses, handoffs | Logical actors or repeated roles (a lifeline does **not** imply a dedicated OS thread) |
 
-Mermaid's `flowchart` syntax can also draw an architecture diagram; the syntax
-alone does not determine whether nodes describe roles or execution steps.
+Combine forms only when each explains a distinct aspect. Never infer temporal ordering from a static architecture connection alone.
 
-## Trace a workflow
+### 2.2 Abstraction Levels & Scope Routing
 
-- Identify the entry, success outcomes, and key failure exits. Give each action
-  node one coherent purpose and result.
-- Put explicit conditions in decision nodes and label outgoing branches with
-  their outcomes. Preserve the conditions that change the user's result.
-- Draw retries back to the step actually repeated, with the implemented attempt
-  or deadline limit. Distinguish definite rejection from an unknown commit result
-  and show the corresponding recovery; do not invent rollback or atomicity.
-- Mark asynchronous dispatch, cleanup, and compensation with their execution
-  boundaries and conditions. Do not imply that background work finishes before
-  a response or that cleanup runs only on success unless the evidence says so.
-- Split complex subprocesses into focused diagrams. Keep the parent's stage name,
-  entry, exits, and return position identifiable in the expanded view. Keep long
-  commands or payloads in adjacent annotations or tables rather than oversized nodes.
+- **Default scope routing**: For a broad "explain the architecture" prompt, present **High + Medium** by default and offer **Low** for concurrency-heavy subsystems, rather than dumping every subsystem at all three levels at once. Jump straight to **Medium + Low** (or a single level) when the question targets concurrency, queues, or one operation.
+- **Split rather than cram**: Keep each diagram focused (~12–15 nodes max). Split dense levels by interaction or subsystem instead of merging everything into one crowded graph. Preserve naming and state which higher-level actor a zoomed-in diagram expands.
 
-## Choose the level
+| Level | Core Question | Required Visibility & Grouping Rules |
+| :--- | :--- | :--- |
+| **High** *(Conceptual)* | Who are the main characters, and what do they accomplish together? | Domain concepts and central objective. One logical actor may span processes or machines. Flowchart nodes represent business stages and key outcomes. Omit low-level machinery unless directly asked. |
+| **Medium** *(Observable I/O)* | What crosses a boundary to produce the behavior? | Concrete processes, machines, users, files, and external endpoints. Show every real boundary in scope: network I/O (HTTP/RPC/WS/TCP), DB/cache, IPC, file R/W, UI I/O, DLL/module loading, process spawning. Keep supporting/fallback I/O visible but subordinate. Do **not** hide multiple external calls inside one generic flowchart step. |
+| **Low** *(Execution & Sync)* | Where does work run, and how do execution contexts communicate? | Threads, event loops, executors, and worker pools (`subgraph cluster_*`); distinguish blocking workers vs. dedicated threads. Expose task handoffs, waits, connection ownership, channels (producers, consumers, element types), and shared state (readers, writers, locks/atomics) plus verified callback/ordering/backpressure behavior. Retain scoped Medium external endpoints so work traces through to observable I/O. |
 
-Use three levels of explanation. A broad architecture request can progress
-through all three; a focused request may need only one. Split dense levels by
-interaction or subsystem instead of merging everything into a single diagram.
+### 2.3 Default Mode vs. Detail Mode
 
-For flowcharts, the level determines how actions may be grouped and which
-boundaries must remain visible. A node need not match a function, file, or line
-of code. Do not merge away a boundary required at the chosen level. When zooming
-in, preserve the parent stage's name, entry, exits, and key outcomes.
+Use **Default mode** unless the user explicitly asks for **Detail mode** (`detail mode` / `详细模式`) or its specific additions. **Requesting a Low-level view alone does not enable Detail mode.**
 
-Default mode and detail mode are independent of these abstraction levels. Use
-default mode unless the user requests detail mode or its specific additions.
-A request for low-level architecture alone does not enable detail mode.
-Detail mode adds only:
+- **Both modes** must show **multiplicity** whenever repeated actors, connections, or tasks exist (e.g., `Worker threads x2`, `Reader tasks x active connections`). Distinguish **fixed counts**, **dynamic counts**, and **configured maximums**—never present a source limit as an observed runtime count.
+- **Detail mode adds only**:
+  1. **Channel capacities** on the diagram with units or `unbounded` / `unknown` (capacity ≠ current occupancy).
+  2. **Boundary data appendix tables** keyed to shown diagram edges (file, IPC, network, ABI), listing only behavior-relevant fields with readable high-level names/meanings and source links to exact definitions. Never dump field inventories onto diagram nodes.
 
-- Channel capacities on the diagram, with units or `unbounded` / `unknown`.
-  Capacity is not current occupancy.
-- Appendix tables describing fields of data crossing file, IPC, network, ABI,
-  and other boundaries, as described below.
+## 3. Non-Negotiable Modeling Laws
 
-Omit those additions in default mode. Show multiplicity in both modes wherever
-the selected level includes repeated actors or tasks.
+1. **Aggregation & P2P Symmetry**: Aggregate repeated actors **only** when their count is incidental/variable **and** their roles and relationships are fully interchangeable. Keep opposite endpoints and distinct ownership contexts separate even when running identical binaries. For one P2P connection, draw the **initiator** and **receiver** and each side's **local client + game/app** separately—never imply a shared local client, connection, or state that does not exist.
+2. **In-Process Modules & OS Boundaries**: A DLL, shared library, or in-process plugin runs **inside the process that loads it** (`cluster_*`), regardless of which application distributes its file on disk. Collapse OS services like WMI into ordinary API calls by default unless central/requested, without hiding file, network, or IPC boundaries accessed via OS APIs.
+3. **Messages vs. Sessions vs. Connections**: Explicitly state whether interactions multiplex over **one shared connection** or open **separate connections** (even to the same host:port, e.g., `1 WebSocket per room`), and show setup/closure when relevant. In architecture diagrams, draw a **single bidirectional connection as one `dir=both` edge** labeled with transport + messages each way (`Req -> / <- Event`). Split into two edges only to clarify distinct behavior, explicitly noting the shared underlying connection.
+4. **Concurrency & State Accuracy**: Never imply one OS thread per coroutine/async task, and never pin a migrating pool task to one fixed worker; mark unverified placement as `unknown`. Draw task-owned local state inside the task—never as cross-thread shared state. Show wait/reject/drop backpressure only when verified in code; never guess from queue names.
+5. **Workflow Branch, Retry & Unknown-Commit Rigor**: Give each action node one coherent purpose. Put explicit conditions in diamond nodes and label outgoing branches. Route retry edges back to the **exact step repeated** with the implemented attempt or deadline limit. Distinguish **definite rejection** from an **unknown commit result** (timeout/disconnect after send) and show actual recovery; never invent rollback or atomicity. Mark async dispatch, cleanup, and compensation with their true execution context and trigger conditions (do not imply background tasks finish before the response or that cleanup runs only on success unless proven). Split complex subprocesses while preserving parent stage name, entry, exits, and return position.
+6. **Progressive Boundary Data**: Label important edges with real message/type names and purpose. At Medium level, note when wire/file/ABI encoding differs from in-memory structs. Link key actors, producers, consumers, and boundary types to source files.
 
-At every level, aggregate repeated actors only when their count is incidental
-or variable and their roles and relationships are interchangeable in the view.
-Keep distinct participants separate, especially opposite endpoints or actors
-with different ownership contexts, even when they run identical software.
-Count alone is not decisive: two interchangeable workers may be grouped, while
-a configurable population may still contain distinct roles. For one peer
-connection, the two endpoints and their respective local clients must remain
-separate: one initiates and the other receives, and each client serves its own
-game. Simplification must preserve who communicates with whom and must not
-imply a shared service, connection, or state that does not exist.
+## 4. Protagonist Composition & Engine Rules
 
-### High: conceptual overview
+### 4.1 Compose Around the Protagonists
 
-Answer: who are the main characters, and what do they accomplish together?
+- **Anchor the protagonist first**: Place the primary actor at the natural reading origin (`rank 0`: far-left in `LR`, top in `TB`) with the strongest border weight, followed immediately by the main secondary actor along a straight primary axis. Do **not** rely on `"start here"` text labels to rescue poor layout.
+- **Keep upstream helpers subordinate**: Never let a config file, launcher, or DLL loader push the protagonist out of `rank 0` merely because its edge points into the protagonist.
+  - *Example*: For a game SDK exposing host features, **Game** is primary and **Host** is secondary along the horizontal request/result spine; DLL loading and launcher relaunch enter perpendicularly as supporting paths. Only a question specifically about launching promotes **Launcher** to protagonist.
 
-- Nodes represent concepts meaningful in the project. One logical actor may
-  span multiple processes or machines; do not force it into a process boundary.
-- Show the central objective and relationships. Leave implementation machinery
-  for the next levels unless it is itself central to the requested concept.
-- In flowcharts, nodes are meaningful business stages with key decisions and
-  outcomes. A stage may span internal components or processes.
+### 4.2 Graphviz DOT Mechanics (Architecture & Flowcharts)
 
-### Medium: observable interactions
+Use Graphviz's layout constraints deliberately to eliminate crooked spines and misplaced starts:
 
-Answer: what crosses a boundary to produce the behavior?
+- **Straight main spine**: Put `group="main"` on primary-path nodes and `weight=10, penwidth=2.0` on primary-path edges so `dot` locks them onto a single straight axis.
+- **Directional port discipline**:
+  - In `rankdir=LR`: main spine flows **left-in / right-out** (`A:e -> B:w`); supporting inputs/storage attach **top/bottom** (`:n` / `:s`); loopbacks curve underneath (`:s -> :s`).
+  - In `rankdir=TB`: main spine flows **top-in / bottom-out** (`A:s -> B:n`); side exits/branches step **horizontally** (`Decision:e -> Exit:w`); retries loop along the outer side (`:w -> :w` or `:e -> :e`).
+- **Prevent rank-0 snap bugs**: In `dot`, any node with **zero incoming constrained edges** snaps to `rank 0`!
+  - Use `constraint=false` **only** on backward/retry/callback edges and on rank-0 upstream helpers (`Launcher:s -> Game:n [constraint=false]`).
+  - To park a peripheral node (storage, error exit, side helper) directly beside/below an interior node `X` in the **same scope**, lock them with `{ rank=same; X; SideNode }`—**never** write `rank=same` across different `subgraph cluster_*` scopes.
+- **Avoid Graphviz parser & routing traps**:
+  - **Never use `splines=ortho`**: Graphviz ignores compass ports (`:n/:s/:e/:w`) and misplaces edge `label`s in `ortho` mode. Use `splines=true` or `splines=polyline`.
+  - **Container prefix**: Subgraphs draw a visible boundary box **only** when named `subgraph cluster_<id> { ... }`.
+  - **Shape & theme semantics**: Always set a light card `bgcolor="#FAFAFC"` and CJK-safe sans-serif `fontname` so SVGs stay readable in both dark and light editors. Use bold rounded boxes for protagonists, standard rounded boxes for roles/actions, `shape=parallelogram` for channels/queues, `shape=cylinder` for storage/shared state, and `shape=diamond` for flowchart decisions. Keep labels short (1–3 lines with `\n`); move bulky payloads to Markdown notes.
 
-- In flowcharts, group processing within one participant or show an explicit
-  boundary interaction. Keep HTTP, RPC, database/cache, and file I/O visible
-  where relevant; do not hide multiple external calls inside one generic action.
-- Show all relevant observable boundaries within the requested scope: network
-  I/O such as HTTP requests, IPC, file reads/writes, UI input/output, DLL or
-  module loading, and process spawning. Include only categories actually present.
-- Identify the relevant processes, machines, users, files, and external
-  endpoints. Expand a conceptual actor into its concrete participants as needed.
-  A DLL runs in the process that loads it, regardless of which application
-  distributes its file.
-- Label edges with the operation or data and its direction. Distinguish calls,
-  requests, responses, events, and launches where the distinction matters.
-- Distinguish logical messages, protocol sessions, and transport connections.
-  State which interactions share a connection and which create separate
-  connections, even when they use the same server address and port. Label
-  connection purpose and multiplicity, for example `separate WebSocket per room`,
-  and show establishment and closure when relevant to the requested flow.
-  An aggregated edge must make its connection multiplicity explicit; endpoint
-  or port labels alone do not establish connection identity.
-- In architecture diagrams, represent a single bidirectional connection with
-  one bidirectional edge by default. Label the transport and messages flowing
-  each way. Use separate directional edges only when they clarify distinct
-  behavior, and explicitly identify any shared connection. Introduce a transport
-  node when its own properties need explanation. Never imply separate physical
-  connections merely because requests and responses travel in opposite directions.
-  Sequence diagrams retain separate request/response arrows to show events over time.
-- Collapse WMI and similar OS-service interactions into API calls by default:
-  system components usually sit outside the project. Expand them when requested
-  or central to the behavior. This does not hide file, network, or IPC boundaries
-  merely because the program accesses them through an OS API.
-- Keep supporting I/O visible but subordinate, including on optional and
-  fallback paths. Split diagrams when needed rather than omit relevant
-  participants or boundaries.
+**Pattern A — Medium Architecture (`rankdir=LR`, straight spine + in-process DLL + single bidirectional pipe)**:
 
-### Low: execution and communication
+```dot
+digraph arch {
+    rankdir=LR; splines=true; nodesep=0.55; ranksep=0.80; pad=0.35; bgcolor="#FAFAFC";
+    fontname="Segoe UI, -apple-system, PingFang SC, Microsoft YaHei, sans-serif";
+    node [fontname="Segoe UI, -apple-system, PingFang SC, Microsoft YaHei, sans-serif", fontsize=11, shape=box, style="rounded,filled", fillcolor="#FFFFFF", color="#64748B", fontcolor="#0F172A", margin="0.18,0.12"];
+    edge [fontname="Segoe UI, -apple-system, PingFang SC, Microsoft YaHei, sans-serif", fontsize=10, color="#334155", fontcolor="#334155"];
 
-Answer: where does work run, and how do execution contexts communicate?
+    Launcher [label="Launcher\n(process)", color="#94A3B8", fontcolor="#475569"];
+    subgraph cluster_game {
+        label="Game Process"; style="rounded,filled"; color="#3B82F6"; fillcolor="#EFF6FF";
+        Game   [label="Game Client", group="main", penwidth=2.6, color="#1D4ED8", fillcolor="#DBEAFE"];
+        SdkDll [label="sdk.dll\n(in-process)", group="main", penwidth=1.6, color="#2563EB"];
+        Game:e -> SdkDll:w [label="SDK call", weight=10, penwidth=2.0];
+    }
+    Host  [label="Host App\n(local process)", group="main", penwidth=1.8, color="#334155", fillcolor="#F8FAFC"];
+    Cache [label="Session Store", shape=cylinder, fillcolor="#F1F5F9", color="#475569"];
 
-- In flowcharts, nodes describe work within an execution context or an operation
-  on shared state. Expose relevant task handoffs, waits, connection ownership,
-  and transaction or synchronization boundaries rather than every code statement.
-- Show relevant threads and coroutine/async-task boundaries. Place tasks within
-  their actual thread, event loop, executor, or worker pool. Distinguish blocking
-  workers and dedicated threads. Do not imply one thread per coroutine or assign
-  a migrating task to a fixed worker. Mark unknown placement explicitly.
-- Show multiplicity when a thread or task role has more than one instance, such
-  as `Worker threads x2` or `Reader tasks x active connections`. Aggregate roles
-  only when their behavior and relationships are interchangeable in the view.
-  Distinguish fixed counts, dynamic counts, and configured maximums. Do not
-  present a source-derived limit as an observed current count.
-- Show channels/queues with producers, consumers, direction, and carried data.
-  Show shared state separately, naming its readers/writers and synchronization
-  where relevant. Do not depict task-owned state as shared across threads.
-- Include callback delivery context, waits, ordering, and
-  backpressure when they explain the requested behavior; avoid a catalog of
-  incidental locks and implementation constants. Show established wait/reject/drop
-  behavior where relevant; do not guess from the queue name.
-- Retain medium-level endpoints and boundaries when the requested scope includes
-  them, so the reader can follow work from execution context to observable I/O.
-
-## Reveal boundary data progressively
-
-Give important interactions their actual message or type name and purpose.
-For medium-level boundaries, distinguish the wire, file, or ABI representation
-from an in-memory type when they differ. At low level, identify channel element
-types and shared-state records, including which actors read or write them.
-
-Keep the main diagram concise. In detail mode, add appendix tables for data
-structures crossing the shown boundaries. Describe fields with readable,
-high-level names and meanings rather than source identifiers. If a structure
-has many fields, include only those important to the requested behavior. Key
-each table to its diagram interaction and link to the source for exact field
-names, types, and complete definitions. Do not put field inventories on the
-diagram or include these appendix tables by default.
-
-Make the complete definition reachable through a source link or requested
-expansion. Link important actors and interactions to their implementations,
-including producer and consumer code when useful. Select details for the user's
-scope and preserve the main reading path as more information is revealed.
-
-## Compose around the protagonists
-
-Each diagram needs a clear entry point and visual hierarchy, even without color.
-
-- Give the primary actor the natural starting position for the chosen reading
-  direction, a prominent footprint, and enough surrounding space. Place the
-  secondary actor next along the main interaction axis.
-- Make the main path easy to follow. Place supporting actors and secondary
-  paths off that axis; keep response paths from obscuring the initiating flow.
-  Do not let an upstream file, launcher, or infrastructure node accidentally
-  become the starting point just because its edge points into the protagonist.
-- Use position, size, grouping, spacing, and appropriate shape to establish
-  prominence. Color may supplement this hierarchy but must not carry it alone.
-  Preserve shape semantics for processes, resources, queues, and shared data.
-  A label saying "main actor" or "start here" is not a substitute for composition.
-- Preserve names and conceptual continuity while zooming in. A lower layer can
-  have a new focal actor, but make clear which higher-level actor it expands.
-- In node-link diagrams, prefer incoming and outgoing edges on different sides
-  of a node, ideally opposite sides along the main path: top-in/bottom-out or
-  left-in/right-out. Keep branches beside the main path and retries around its
-  outside where practical. Decisions, loops, and bidirectional links may need
-  exceptions. Simplify or split dense views without inventing actions, duplicating
-  shared resources, or changing relationships solely to influence layout.
-
-For example, a game SDK that lets a game use host features starts with the game
-as the primary actor and the host as the secondary actor, connected by the
-feature request/result path. DLL loading and relaunch are supporting paths. A
-zoom into game execution starts with the calling thread and follows its work
-through queues and workers. A question specifically about launching the game
-can instead make the launcher the protagonist.
-
-## Mermaid presentation
-
-Mermaid direction declarations guide overall layout; they do not guarantee
-per-edge attachment sides. Treat edge separation as a best-effort composition
-goal, not a precise placement requirement. Do not render previews, capture
-screenshots, or perform visual verification as part of this workflow.
-
-In architecture diagrams, keep role nodes in the renderer's default style.
-Use parallelograms for channel nodes to distinguish them from rectangular role
-nodes, and retain directional arrows. Use the renderer's default colors.
-
-```mermaid
-flowchart LR
-    R["Role"] -->|"Message"| Q[/"Channel"/]
+    Launcher:s -> Game:n [label="spawns", style=dashed, color="#64748B", constraint=false];
+    SdkDll:e -> Host:w [dir=both, label="Named Pipe (1 per game)\nFeatureReq -> / <- EventPush", weight=10, penwidth=2.0, color="#1E293B"];
+    { rank=same; Host; Cache }
+    Host:s -> Cache:n [label="R/W session", style=dashed];
+}
 ```
 
-Reserve cylinders for storage, not communication channels. Do not rely on shape
-or color alone to convey meaning; label each channel with its purpose or data.
-In flowcharts, use rectangles for actions, diamonds for decisions, and explicit
-entry/outcome labels; keep storage and channel shapes for those actual resources.
+**Pattern B — Workflow Flowchart (`rankdir=TB`, top-in/bottom-out spine + side exits + bounded retry)**:
 
-Avoid raw `;` in sequence messages and notes: Mermaid treats it as a statement
-separator. Use a comma or "and", or escape a literal semicolon as `#59;`.
+```dot
+digraph flow {
+    rankdir=TB; splines=true; nodesep=0.60; ranksep=0.65; pad=0.35; bgcolor="#FAFAFC";
+    fontname="Segoe UI, -apple-system, PingFang SC, Microsoft YaHei, sans-serif";
+    node [fontname="Segoe UI, -apple-system, PingFang SC, Microsoft YaHei, sans-serif", fontsize=11, shape=box, style="rounded,filled", fillcolor="#FFFFFF", color="#64748B", fontcolor="#0F172A", margin="0.18,0.10"];
+    edge [fontname="Segoe UI, -apple-system, PingFang SC, Microsoft YaHei, sans-serif", fontsize=10, color="#334155", fontcolor="#334155"];
 
-## Deliver and check
+    Start    [label="Submit Request", group="main", penwidth=2.6, color="#1D4ED8", fillcolor="#DBEAFE"];
+    Validate [label="Validate & Send", group="main", penwidth=1.8, fillcolor="#F8FAFC"];
+    AckCheck [label="Commit Ack?", shape=diamond, group="main", fillcolor="#FFF7ED", color="#C2410C"];
+    Success  [label="Return Confirmed", group="main", penwidth=2.0, color="#15803D", fillcolor="#DCFCE7"];
+    Reject   [label="Return Definite Error", color="#DC2626", fillcolor="#FEF2F2"];
+    Poll     [label="Query Commit Status", color="#D97706", fillcolor="#FFFBEB"];
 
-Introduce the purpose and scope briefly, then show the selected layers. Keep
-explanations focused on consequences the diagrams do not already make clear.
-Provide a few precise source references and disclose material evidence gaps.
-Architecture explanation alone does not require changing code or running it.
+    Start:s -> Validate:n [weight=10, penwidth=2.0];
+    Validate:s -> AckCheck:n [weight=10, penwidth=2.0];
+    AckCheck:s -> Success:n [label="committed", weight=10, penwidth=2.0];
 
-Before finishing, check the diagram source for valid syntax, a clear entry and
-main path, a coherent abstraction level, and a suitable form. Check scoped I/O
-boundaries, shared versus separate connections, task placement, multiplicity,
-and shared-state ownership against the evidence. For flowcharts, also check
-branch conditions, failure exits, retry targets and limits, and asynchronous or
-cleanup ordering. In detail mode, check channel capacities and appendix fields.
-Keep boundary definitions reachable through source links. These are source and
-semantic checks, not a rendered-layout acceptance gate.
+    { rank=same; Validate; Reject }
+    Validate:e -> Reject:w [label="rejected"];
+    { rank=same; AckCheck; Poll }
+    AckCheck:e -> Poll:w [label="timeout (unknown)"];
+    Poll:n -> AckCheck:e [label="retry <= 3", style=dashed, constraint=false];
+}
+```
+
+### 4.3 Rendering, Output Location & Mermaid Sequence Rules
+
+- **Compile DOT to SVG without dirtying the repo**: Save `.dot` and `.svg` files in the session artifact folder or an OS temp subfolder (never inside an untracked repository tree unless the user asks to save project docs). If `dot` is installed (`dot -Tsvg in.dot -o out.svg`), compile every DOT graph to verify zero syntax errors, link the rendered `.svg` prominently in Markdown, and place the `.dot` source in a collapsible `<details>` block (or inline when brief). If `dot` is unavailable, provide the ```` ```dot ```` block inline and mention installing Graphviz (`scoop install graphviz` / `winget install Graphviz.Graphviz`) in one short note.
+- **Mermaid `sequenceDiagram` rules**: Render sequence diagrams inline in ```` ```mermaid ```` blocks. Declare participants in left-to-right interaction order starting with the protagonist. Distinguish sync calls (`->>`), async/queued messages (`-)`), responses (`-->>`), and activation/waits. **Never put raw `;` in sequence messages or notes** (Mermaid parses `;` as a statement break—use `,`, `and`, or `#59;`).
+- **No visual-inspection loops**: Checking `dot -Tsvg` exit status validates syntax; do **not** open browsers, capture screenshots, or iterate on rendered pixels.
+
+## 5. Deliver and Verify
+
+1. **Deliver concisely**: State the scope and provenance in 1–2 sentences, present the selected diagrams, explain **only non-obvious consequences and trade-offs** (do not narrate arrows the diagram already shows), link key implementations in source, and disclose any material evidence gaps. Architecture explanation alone requires neither modifying nor running project code.
+2. **Pre-finish semantic & syntax check**:
+   - DOT compiles cleanly (or passes syntax check) with no `splines=ortho`, no cross-cluster `rank=same`, and no unintended rank-0 orphan nodes; Mermaid sequences contain no raw `;`.
+   - Protagonist sits at `rank 0` with bold visual weight; main spine (`group="main"`, `weight=10`) runs straight without detours.
+   - Chosen Form, Level, and Mode match the prompt; channels use parallelograms, storage uses cylinders, and single bidirectional transports use one `dir=both` edge with explicit connection multiplicity.
+   - DLLs sit inside loader processes; P2P peers remain separate; coroutines are not drawn as OS threads; flowcharts distinguish definite rejection from unknown commit and route retries to the exact repeated step with real limits.
+   - Detail-mode capacities and appendix field tables appear **if and only if** requested, with working source links.

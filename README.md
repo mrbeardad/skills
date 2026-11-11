@@ -5,7 +5,8 @@ Reusable agent skills.
 ## Explain Architecture
 
 [explain-architecture](skills/explain-architecture/SKILL.md) explains software
-architecture and execution flows with Mermaid diagrams grounded in source code.
+architecture and execution flows with protagonist-centered Graphviz DOT diagrams
+(architecture and flowcharts) and Mermaid sequence diagrams grounded in source code.
 It supports high, medium, and low abstraction levels, plus an optional detail
 mode for channel capacities and boundary-data appendix tables.
 
