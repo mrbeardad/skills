@@ -70,54 +70,57 @@ Use **Default mode** unless the user explicitly asks for **Detail mode** (`detai
 
 ### 4.2 Graphviz DOT Mechanics (Architecture & Flowcharts)
 
-Use Graphviz's layout constraints deliberately to eliminate crooked spines and misplaced starts:
+Combine **rank-driven in/out separation** with **shortest-path boundary clipping** so edges stay short, untangled, and well-spaced:
 
-- **Straight main spine**: Put `group="main"` on primary-path nodes and `weight=10, penwidth=2.0` on primary-path edges so `dot` locks them onto a single straight axis.
-- **Directional port discipline**:
-  - In `rankdir=LR`: main spine flows **left-in / right-out** (`A:e -> B:w`); supporting inputs/storage attach **top/bottom** (`:n` / `:s`); loopbacks curve underneath (`:s -> :s`).
-  - In `rankdir=TB`: main spine flows **top-in / bottom-out** (`A:s -> B:n`); side exits/branches step **horizontally** (`Decision:e -> Exit:w`); retries loop along the outer side (`:w -> :w` or `:e -> :e`).
-- **Prevent rank-0 snap bugs**: In `dot`, any node with **zero incoming constrained edges** snaps to `rank 0`!
-  - Use `constraint=false` **only** on backward/retry/callback edges and on rank-0 upstream helpers (`Launcher:s -> Game:n [constraint=false]`).
-  - To park a peripheral node (storage, error exit, side helper) directly beside/below an interior node `X` in the **same scope**, lock them with `{ rank=same; X; SideNode }`—**never** write `rank=same` across different `subgraph cluster_*` scopes.
-- **Avoid Graphviz parser & routing traps**:
-  - **Never use `splines=ortho`**: Graphviz ignores compass ports (`:n/:s/:e/:w`) and misplaces edge `label`s in `ortho` mode. Use `splines=true` or `splines=polyline`.
-  - **Container prefix**: Subgraphs draw a visible boundary box **only** when named `subgraph cluster_<id> { ... }`.
-  - **Shape & theme semantics**: Always set a light card `bgcolor="#FAFAFC"` and CJK-safe sans-serif `fontname` so SVGs stay readable in both dark and light editors. Use bold rounded boxes for protagonists, standard rounded boxes for roles/actions, `shape=parallelogram` for channels/queues, `shape=cylinder` for storage/shared state, and `shape=diamond` for flowchart decisions. Keep labels short (1–3 lines with `\n`); move bulky payloads to Markdown notes.
+- **Omit compass ports (`:n/:s/:e/:w`) by default (Shortest-Path Clipping)**:
+  - Before `dot` runs, final 2D node positions are unknown—hardcoding `:e -> :w` or `:s -> :n` causes **180° wrap-around hooks** (when a target lands above or behind the source) and **single-point pinch knots** (forcing 4+ outgoing splines onto one center pixel of `:e`).
+  - Leave edges **unported** (`A -> B`) so `dot` clips each spline to the **nearest facing border** and spreads multiple outgoing edges evenly along the node perimeter. Never attach compass ports to hub nodes (degree ≥ 3), cross-cluster edges, or diagonal/backward edges.
+- **Separate In vs. Out via Rank Progression & Perpendicular Docking (not port syntax)**:
+  - Forward rank order (`rank(upstream) < rank(actor) < rank(downstream)`) naturally brings inputs into the upstream side (`left` in `LR`, `top` in `TB`) and sends outputs out the downstream side.
+  - Put `group="main"` and `weight=10, penwidth=2.0` on the **true synchronous primary spine** (not secondary background timers) so the core path stays straight and short.
+  - Dock **at most one** pure local helper/lock beside an actor using `{ rank=same; Helper; Actor }` (with `dir=both` for acquire/release or R/W, unported) for a 1-hop perpendicular link; stacking two `rank=same` helpers on one actor forces skip-over arcs. Place helpers that also call downstream services at `rank(Actor) + 1` along their forward path.
+- **Keep DAG edges constrained so `dot` minimizes crossings & guard `rank 0`**:
+  - Weight primary synchronous calls (`weight=6..10`) so shared sinks (e.g., Redis/DB) sit near their call barycenter (1 hop from heavy callers). Keep forward async/cross-cluster edges **constrained** (default `constraint=true`, unported) so `dot`'s crossing-minimizer (`mincross`) vertically aligns producers with their target clusters instead of crossing lines across the canvas.
+  - Because `constraint=false` both skips rank assignment (snapping zero-in-degree targets to `rank 0`) **and** bypasses crossing minimization, use `constraint=false` **only** on **cycle-creating retry/callback back-edges** and **rank-0 upstream spawners** (`Launcher -> Game [constraint=false]`). **Never** write `rank=same` across different `subgraph cluster_*` scopes.
+- **Control hub fan-out, label clearance & container breathing room**:
+  - Keep edge labels concise (≤ 22 chars/line, max 2 short lines, space-padded `" label "`) with `ranksep=1.0`, `nodesep=0.50`, and `edge [arrowsize=0.8]`. Never cram `if` prose or multi-command scripts onto architecture edges—put details in Markdown notes or pair with a Mermaid `sequenceDiagram` when numbered step order (`1..N`) matters. If one hub radiates > 6 edges, split cohesive sub-stages or collapse request/reply pairs into `dir=both`.
+  - **Never use `splines=ortho`** (misplaces edge labels); use `splines=true` or `splines=polyline`. Name visible containers `subgraph cluster_<id>` with `labeljust="l"; labelloc="t"; margin=18; fontsize=12`. Always set `bgcolor="#FAFAFC"` and a CJK-safe sans-serif `fontname`; use bold rounded boxes for protagonists, rounded boxes for roles/actions, `shape=parallelogram` for channels/queues, `shape=cylinder` for storage/shared state, and `shape=diamond` for decisions.
 
-**Pattern A — Medium Architecture (`rankdir=LR`, straight spine + in-process DLL + single bidirectional pipe)**:
+**Pattern A — Medium Architecture (`rankdir=LR`, unported shortest-path + rank-driven in/out separation)**:
 
 ```dot
 digraph arch {
-    rankdir=LR; splines=true; nodesep=0.55; ranksep=0.80; pad=0.35; bgcolor="#FAFAFC";
+    rankdir=LR; splines=true; nodesep=0.50; ranksep=1.00; pad=0.35; bgcolor="#FAFAFC";
     fontname="Segoe UI, -apple-system, PingFang SC, Microsoft YaHei, sans-serif";
     node [fontname="Segoe UI, -apple-system, PingFang SC, Microsoft YaHei, sans-serif", fontsize=11, shape=box, style="rounded,filled", fillcolor="#FFFFFF", color="#64748B", fontcolor="#0F172A", margin="0.18,0.12"];
-    edge [fontname="Segoe UI, -apple-system, PingFang SC, Microsoft YaHei, sans-serif", fontsize=10, color="#334155", fontcolor="#334155"];
+    edge [fontname="Segoe UI, -apple-system, PingFang SC, Microsoft YaHei, sans-serif", fontsize=9.5, color="#334155", fontcolor="#334155", arrowsize=0.8];
 
     Launcher [label="Launcher\n(process)", color="#94A3B8", fontcolor="#475569"];
     subgraph cluster_game {
-        label="Game Process"; style="rounded,filled"; color="#3B82F6"; fillcolor="#EFF6FF";
+        label="Game Process"; labeljust="l"; labelloc="t"; fontsize=12; margin=18;
+        style="rounded,filled"; color="#3B82F6"; fillcolor="#EFF6FF";
         Game   [label="Game Client", group="main", penwidth=2.6, color="#1D4ED8", fillcolor="#DBEAFE"];
         SdkDll [label="sdk.dll\n(in-process)", group="main", penwidth=1.6, color="#2563EB"];
-        Game:e -> SdkDll:w [label="SDK call", weight=10, penwidth=2.0];
+        Game -> SdkDll [label=" SDK call ", weight=10, penwidth=2.0];
     }
     Host  [label="Host App\n(local process)", group="main", penwidth=1.8, color="#334155", fillcolor="#F8FAFC"];
     Cache [label="Session Store", shape=cylinder, fillcolor="#F1F5F9", color="#475569"];
 
-    Launcher:s -> Game:n [label="spawns", style=dashed, color="#64748B", constraint=false];
-    SdkDll:e -> Host:w [dir=both, label="Named Pipe (1 per game)\nFeatureReq -> / <- EventPush", weight=10, penwidth=2.0, color="#1E293B"];
+    Launcher -> Game [label=" spawns ", style=dashed, color="#64748B", constraint=false];
+    SdkDll -> Host [dir=both, label=" Named Pipe (1 per game) \n FeatureReq -> / <- EventPush ", weight=10, penwidth=2.0, color="#1E293B"];
     { rank=same; Host; Cache }
-    Host:s -> Cache:n [label="R/W session", style=dashed];
+    Host -> Cache [dir=both, label=" R/W session ", style=dashed];
 }
 ```
 
-**Pattern B — Workflow Flowchart (`rankdir=TB`, top-in/bottom-out spine + side exits + bounded retry)**:
+**Pattern B — Workflow Flowchart (`rankdir=TB`, straight spine + perpendicular side exits + bounded retry)**:
 
 ```dot
 digraph flow {
-    rankdir=TB; splines=true; nodesep=0.60; ranksep=0.65; pad=0.35; bgcolor="#FAFAFC";
+    rankdir=TB; splines=true; nodesep=0.55; ranksep=0.70; pad=0.35; bgcolor="#FAFAFC";
     fontname="Segoe UI, -apple-system, PingFang SC, Microsoft YaHei, sans-serif";
     node [fontname="Segoe UI, -apple-system, PingFang SC, Microsoft YaHei, sans-serif", fontsize=11, shape=box, style="rounded,filled", fillcolor="#FFFFFF", color="#64748B", fontcolor="#0F172A", margin="0.18,0.10"];
-    edge [fontname="Segoe UI, -apple-system, PingFang SC, Microsoft YaHei, sans-serif", fontsize=10, color="#334155", fontcolor="#334155"];
+    edge [fontname="Segoe UI, -apple-system, PingFang SC, Microsoft YaHei, sans-serif", fontsize=9.5, color="#334155", fontcolor="#334155", arrowsize=0.8];
 
     Start    [label="Submit Request", group="main", penwidth=2.6, color="#1D4ED8", fillcolor="#DBEAFE"];
     Validate [label="Validate & Send", group="main", penwidth=1.8, fillcolor="#F8FAFC"];
@@ -126,21 +129,21 @@ digraph flow {
     Reject   [label="Return Definite Error", color="#DC2626", fillcolor="#FEF2F2"];
     Poll     [label="Query Commit Status", color="#D97706", fillcolor="#FFFBEB"];
 
-    Start:s -> Validate:n [weight=10, penwidth=2.0];
-    Validate:s -> AckCheck:n [weight=10, penwidth=2.0];
-    AckCheck:s -> Success:n [label="committed", weight=10, penwidth=2.0];
+    Start -> Validate [weight=10, penwidth=2.0];
+    Validate -> AckCheck [weight=10, penwidth=2.0];
+    AckCheck -> Success [label=" committed ", weight=10, penwidth=2.0];
 
     { rank=same; Validate; Reject }
-    Validate:e -> Reject:w [label="rejected"];
+    Validate -> Reject [label=" rejected "];
     { rank=same; AckCheck; Poll }
-    AckCheck:e -> Poll:w [label="timeout (unknown)"];
-    Poll:n -> AckCheck:e [label="retry <= 3", style=dashed, constraint=false];
+    AckCheck -> Poll [label=" timeout (unknown) "];
+    Poll -> AckCheck [label=" retry <= 3 ", style=dashed, constraint=false];
 }
 ```
 
 ### 4.3 Rendering, Output Location & Mermaid Sequence Rules
 
-- **Compile DOT to SVG without dirtying the repo**: Save `.dot` and `.svg` files in the session artifact folder or an OS temp subfolder (never inside an untracked repository tree unless the user asks to save project docs). If `dot` is installed (`dot -Tsvg in.dot -o out.svg`), compile every DOT graph to verify zero syntax errors, link the rendered `.svg` prominently in Markdown, and place the `.dot` source in a collapsible `<details>` block (or inline when brief). If `dot` is unavailable, provide the ```` ```dot ```` block inline and mention installing Graphviz (`scoop install graphviz` / `winget install Graphviz.Graphviz`) in one short note.
+- **Compile DOT to SVG and omit DOT source from chat**: Save `.dot` and `.svg` files in the session artifact folder or an OS temp subfolder (never inside an untracked repository tree unless the user asks to save project docs). **Never paste raw `.dot` source code into the chat window unless the user explicitly asks for it.** When `dot` is installed (`dot -Tsvg in.dot -o out.svg`), compile every DOT graph to verify zero syntax errors and surface only the rendered `.svg` link in Markdown. If `dot` is unavailable, link the saved `.dot` file path and mention installing Graphviz (`scoop install graphviz` / `winget install Graphviz.Graphviz`) in one short note without dumping the DOT code inline.
 - **Mermaid `sequenceDiagram` rules**: Render sequence diagrams inline in ```` ```mermaid ```` blocks. Declare participants in left-to-right interaction order starting with the protagonist. Distinguish sync calls (`->>`), async/queued messages (`-)`), responses (`-->>`), and activation/waits. **Never put raw `;` in sequence messages or notes** (Mermaid parses `;` as a statement break—use `,`, `and`, or `#59;`).
 - **No visual-inspection loops**: Checking `dot -Tsvg` exit status validates syntax; do **not** open browsers, capture screenshots, or iterate on rendered pixels.
 
@@ -148,7 +151,7 @@ digraph flow {
 
 1. **Deliver concisely**: State the scope and provenance in 1–2 sentences, present the selected diagrams, explain **only non-obvious consequences and trade-offs** (do not narrate arrows the diagram already shows), link key implementations in source, and disclose any material evidence gaps. Architecture explanation alone requires neither modifying nor running project code.
 2. **Pre-finish semantic & syntax check**:
-   - DOT compiles cleanly (or passes syntax check) with no `splines=ortho`, no cross-cluster `rank=same`, and no unintended rank-0 orphan nodes; Mermaid sequences contain no raw `;`.
+   - DOT compiles cleanly (or passes syntax check) with no `splines=ortho`, no hardcoded `:n/:s/:e/:w` ports on hubs/cross-cluster/backward edges, at most one `rank=same` helper per actor, no cross-cluster `rank=same`, and no unintended rank-0 orphan nodes; Mermaid sequences contain no raw `;`.
    - Protagonist sits at `rank 0` with bold visual weight; main spine (`group="main"`, `weight=10`) runs straight without detours.
    - Chosen Form, Level, and Mode match the prompt; channels use parallelograms, storage uses cylinders, and single bidirectional transports use one `dir=both` edge with explicit connection multiplicity.
    - DLLs sit inside loader processes; P2P peers remain separate; coroutines are not drawn as OS threads; flowcharts distinguish definite rejection from unknown commit and route retries to the exact repeated step with real limits.
