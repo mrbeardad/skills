@@ -1,6 +1,6 @@
 ---
 name: explain-architecture
-description: "Display software architecture, execution workflows, and runtime concurrency through protagonist-centered Graphviz DOT diagrams (architecture and flowcharts) and Mermaid sequence diagrams focused on observable I/O, execution boundaries, and boundary data. Supports optional detail mode (channel capacities and boundary field tables). Honor any explicitly requested diagram tool or structural format (schema, class diagram, file map)."
+description: "Display software architecture, execution workflows, and runtime concurrency through inline-rendered protagonist-centered diagrams (Graphviz DOT and Mermaid) and structured flow breakdowns, with task-focused boundary merging, L0-to-L1 nesting, and optional detail mode (channel capacities and boundary field tables). Honor any explicitly requested diagram tool, abstraction level, or structural format."
 ---
 
 # Explain Architecture
@@ -15,31 +15,35 @@ This skill governs **display only**. Even in detail mode, never introduce code-r
 - **Ground every element in code**: Trace entry points, I/O calls, task creation/dispatch, channels, and shared state. Keep **implemented behavior**, **documented contracts**, **mocks**, and **external/unverified behavior** clearly distinguishable.
 - **Never invent machinery**: Do not fabricate network protocols, thread assignments, queue drop policies, rollback, or atomicity to make a diagram look complete. State whether the view reflects **current source**, a **shipped release**, or **observed runtime behavior** whenever they could differ.
 
-## 2. Select Form, Level, and Mode
+## 2. Select Form, Level, Mode, and Nesting
 
-Diagram **Form**, abstraction **Level**, and detail **Mode** are three orthogonal choices.
+Diagram **Form**, abstraction **Level**, detail **Mode**, and **Nesting (`L0 → L1`)** are orthogonal choices.
 
-### 2.1 Diagram Form & Default Engine
+### 2.1 Architecture & Flow Representation
 
-Honor any explicitly requested tool or format (e.g., pure Mermaid, Draw.io, PlantUML, ASCII, schema, or class diagram). Otherwise route by question type:
+Honor any explicitly requested tool or format (e.g., pure Mermaid, Draw.io, PlantUML, ASCII, schema, or class diagram). Otherwise use **Graphviz DOT** (`rankdir=LR`) for **Architecture** (participants, responsibilities, boundaries, topology) and pick the **lightest Flow representation** that matches what makes the flow non-obvious—**never redraw the same linear happy path across multiple flow forms**:
 
-| Form | Default Engine | When to Use | Node / Lifeline Semantics |
+| Flow Shape | Default Representation | When to Use | Guardrail |
 | :--- | :--- | :--- | :--- |
-| **Architecture** | **Graphviz DOT** (`rankdir=LR`) | Participants, responsibilities, boundaries, topology | Behavioral roles, processes, channels, storage |
-| **Flowchart** | **Graphviz DOT** (`rankdir=TB`) | Execution paths of an API, algorithm, or operation (branches, retries, recovery) | Coherent actions, explicit decisions, outcomes |
-| **Sequence** | **Mermaid** (`sequenceDiagram`) | Temporal interaction order, waits, callbacks, responses, handoffs | Logical actors or repeated roles (a lifeline does **not** imply a dedicated OS thread) |
+| **Simple cross-role path** *(≤ 6–8 sequential hops)* | **Step markers (`①`–`⑥`) on Architecture + Plain-Text Numbered List** | Reader wants end-to-end request/data path with minimal async interleaving | Do not add a redundant Sequence or Flowchart repeating `① → ⑥` |
+| **Phased lifecycle or linear procedure** | **Plain-Text Structured List** *(grouped by phase)* | Sequential setup/teardown or stage transitions without tricky races or branches | Do not turn linear prose into a vertical chain of flowchart boxes |
+| **Multi-party data exchange & async handshakes** | **Sequence Diagram** (`Mermaid sequenceDiagram`) | Core complexity is **who exchanges what payload/callback with whom and when** across ≥ 3 roles | Align lifelines with Architecture roles; keep heavy retry/branch trees out of `alt/loop` blocks |
+| **Branching, guards, retry loops & error exits** | **Flowchart** (`Graphviz DOT` `rankdir=TB`) | Core complexity is **decisions, loops, timeouts, and recovery** inside an operation or protocol | Focus on decision/loop logic; do not duplicate cross-role payload inventories |
 
-Combine forms only when each explains a distinct aspect. Never infer temporal ordering from a static architecture connection alone.
+Never infer temporal ordering from an unnumbered static architecture connection alone.
 
-### 2.2 Abstraction Levels & Scope Routing
+### 2.2 Abstraction Levels & Boundary Precedence
 
-- **Default scope routing**: For a broad "explain the architecture" prompt, present **High + Medium** by default and offer **Low** for concurrency-heavy subsystems, rather than dumping every subsystem at all three levels at once. Jump straight to **Medium + Low** (or a single level) when the question targets concurrency, queues, or one operation.
-- **Split rather than cram**: Keep each diagram focused (~12–15 nodes max). Split dense levels by interaction or subsystem instead of merging everything into one crowded graph. Preserve naming and state which higher-level actor a zoomed-in diagram expands.
+Apply this **3-tier precedence** to decide which boundaries to expose vs. merge:
+
+1. **Explicit actor/merge filter wins first**: When the user specifies which roles or planes to focus on or fold (e.g., *"focus on networking using game, host, and server"*), honor that exact grouping and merge everything else while preserving the active level's precision on the remaining edges.
+2. **Explicit level (`High` / `Medium` / `Low`) without a merge filter is honored faithfully**: Do **not** silently hide real boundaries of the requested level along the execution path of the requested feature (still omit unrelated features that never run in that flow). When full boundary fidelity exceeds a comfortable single graph, preserve readability via **`L0 → L1` nesting and splitting** (§2.4) rather than dropping boundaries or cramming one flat canvas.
+3. **Unspecified level defaults to Task-Focused Adaptive Merging**: Human attention is limited—keep boundaries central to the user's question at concrete (`Medium`/`Low`) precision, and **merge incidental/supporting boundaries** (forwarding DLLs, internal helper process splits, routine config stores) into their owning behavioral role (`5–9` roles on the overview). Offer deeper `Medium`/`Low` zoom-ins only when hidden boundaries or concurrency materially affect the answer.
 
 | Level | Core Question | Required Visibility & Grouping Rules |
 | :--- | :--- | :--- |
 | **High** *(Conceptual)* | Who are the main characters, and what do they accomplish together? | Domain concepts and central objective. One logical actor may span processes or machines. Flowchart nodes represent business stages and key outcomes. Omit low-level machinery unless directly asked. |
-| **Medium** *(Observable I/O)* | What crosses a boundary to produce the behavior? | Concrete processes, machines, users, files, devices/drivers, and external endpoints. Show every real boundary in scope: network I/O (HTTP/RPC/WS/TCP/UDP/QUIC/raw sockets, **listener/destination ports**, and **listener bind scope** such as `127.0.0.1` loopback vs. `0.0.0.0`/LAN/WAN), DB/cache, IPC, file R/W, UI I/O, DLL/module loading, process spawning, and **project-relevant device/kernel boundaries** (virtual NICs like TUN/TAP/Wintun, kernel drivers `.sys`/`.ko`, packet filters like WFP/NDIS/eBPF/Netfilter, `DeviceIoControl`/`ioctl` on `\\.\*` or `/dev/*`, kernel-user ring buffers, and directly accessed hardware/virtual devices). Keep supporting/fallback I/O visible but subordinate. Do **not** hide multiple external calls inside one generic flowchart step. |
+| **Medium** *(Observable I/O)* | What crosses a boundary to produce the behavior? | Concrete processes, machines, users, files, devices/drivers, and external endpoints. Show every real boundary along the scoped flow: network I/O (HTTP/RPC/WS/TCP/UDP/QUIC/raw sockets, **listener/destination ports**, and **listener bind scope** such as `127.0.0.1` loopback vs. `0.0.0.0`/LAN/WAN), DB/cache, IPC, file R/W, UI I/O, DLL/module loading, process spawning, and **project-relevant device/kernel boundaries** (virtual NICs like TUN/TAP/Wintun, kernel drivers `.sys`/`.ko`, packet filters like WFP/NDIS/eBPF/Netfilter, `DeviceIoControl`/`ioctl` on `\\.\*` or `/dev/*`, kernel-user ring buffers, and directly accessed hardware/virtual devices). Keep supporting/fallback I/O visible but subordinate. Do **not** hide multiple external calls inside one generic flowchart step. |
 | **Low** *(Execution & Sync)* | Where does work run, and how do execution contexts communicate? | Threads, event loops, executors, and worker pools (`subgraph cluster_*`); distinguish blocking workers vs. dedicated threads. Expose task handoffs, waits, connection ownership, channels (producers, consumers, element types), and shared state (readers, writers, locks/atomics) plus verified callback/ordering/backpressure behavior. Retain scoped Medium external endpoints so work traces through to observable I/O. |
 
 ### 2.3 Default Mode vs. Detail Mode
@@ -47,9 +51,16 @@ Combine forms only when each explains a distinct aspect. Never infer temporal or
 Use **Default mode** unless the user explicitly asks for **Detail mode** or its specific additions. **Requesting a Low-level view alone does not enable Detail mode.**
 
 - **Both modes** must show **multiplicity** whenever repeated actors, connections, or tasks exist (e.g., `Worker threads x2`, `Reader tasks x active connections`). Distinguish **fixed counts**, **dynamic counts**, and **configured maximums**—never present a source limit as an observed runtime count.
-- **Detail mode adds only**:
+- **Detail mode adds only** (scoped strictly to the boundaries visible in the presented diagrams or dedicated `L1` queue zoom-ins—never re-dump folded boundaries in the appendix):
   1. **Channel capacities** on the diagram with units or `unbounded` / `unknown` (capacity ≠ current occupancy).
   2. **Boundary data appendix tables** keyed to shown diagram edges (file, IPC, network, ABI, `ioctl`/device/ring-buffer), listing only behavior-relevant fields with readable high-level names/meanings and source links to exact definitions. Never dump field inventories onto diagram nodes.
+
+### 2.4 Progressive Nesting & Splitting (`L0 → L1`)
+
+- **Anchor with `L0` first**: Always open complex systems with a clean `L0` overview (`5–9` top-level roles) + end-to-end happy-path flow so the reader never has to stitch peer sub-diagrams together blindly. Stop at `L0` whenever the system fits cleanly (`≤ 12` nodes).
+- **Split & nest `L1` zoom-ins (`≤ 12` nodes each)** when an explicit `Medium`/`Low` request or subsystem complexity exceeds one readable diagram, always naming the `L0` role or step being expanded:
+  - **Nested Architecture (`Zoom-in: Inside <L0 Role>`)**: Expand one composite actor's internal modules/processes/queues while collapsing external `L0` peers to single boundary stubs.
+  - **Nested / Split Flow (`Zoom-in: <Phase or Decision Logic>`)**: Keep the end-to-end happy path clean (numbered list or high-level Sequence diagram), and extract dense sub-phases or branch/retry/timeout state machines into focused `L1` Flowcharts or sub-sequences.
 
 ## 3. Non-Negotiable Modeling Laws
 
@@ -83,7 +94,7 @@ Combine **rank-driven in/out separation** with **shortest-path boundary clipping
   - Weight primary synchronous calls (`weight=6..10`) so shared sinks (e.g., Redis/DB) sit near their call barycenter (1 hop from heavy callers). Keep forward async/cross-cluster edges **constrained** (default `constraint=true`, unported) so `dot`'s crossing-minimizer (`mincross`) vertically aligns producers with their target clusters instead of crossing lines across the canvas.
   - Because `constraint=false` both skips rank assignment (snapping zero-in-degree targets to `rank 0`) **and** bypasses crossing minimization, use `constraint=false` **only** on **cycle-creating retry/callback back-edges** and **rank-0 upstream spawners** (`Launcher -> Game [constraint=false]`). **Never** write `rank=same` across different `subgraph cluster_*` scopes.
 - **Control hub fan-out, label clearance & container breathing room**:
-  - Keep edge labels concise (≤ 22 chars/line, max 2 short lines, space-padded `" label "`) with `ranksep=1.0`, `nodesep=0.50`, and `edge [arrowsize=0.8]`. Never cram `if` prose or multi-command scripts onto architecture edges—put details in Markdown notes or pair with a Mermaid `sequenceDiagram` when numbered step order (`1..N`) matters. If one hub radiates > 6 edges, split cohesive sub-stages or collapse request/reply pairs into `dir=both`.
+  - Keep edge labels concise (≤ 22 chars/line, max 2 short lines, space-padded `" label "`) with `ranksep=1.0`, `nodesep=0.50`, and `edge [arrowsize=0.8]`. Never cram `if` prose or multi-command scripts onto architecture edges. Short `①`–`⑥` step prefixes on an `L0` architecture diagram are encouraged when paired with a plain-text step list; switch to a `sequenceDiagram` when back-and-forth across the same edges would clutter labels. If one hub radiates > 6 edges, split cohesive sub-stages or collapse request/reply pairs into `dir=both`.
   - **Never use `splines=ortho`** (misplaces edge labels); use `splines=true` or `splines=polyline`. Name visible containers `subgraph cluster_<id>` with `labeljust="l"; labelloc="t"; margin=18; fontsize=12`. Always set `bgcolor="#FAFAFC"` and a CJK-safe sans-serif `fontname`; use bold rounded boxes for protagonists, rounded boxes for roles/actions, `shape=parallelogram` for channels/queues, `shape=cylinder` for storage/shared state, and `shape=diamond` for decisions.
 
 **Pattern A — Medium Architecture (`rankdir=LR`, unported shortest-path + rank-driven in/out separation)**:
@@ -141,18 +152,19 @@ digraph flow {
 }
 ```
 
-### 4.3 Rendering, Output Location & Mermaid Sequence Rules
+### 4.3 Inline Rendering, Artifacts & Mermaid Sequence Rules
 
-- **Compile DOT to SVG and omit DOT source from chat**: Save `.dot` and `.svg` files in the session artifact folder or an OS temp subfolder (never inside an untracked repository tree unless the user asks to save project docs). **Never paste raw `.dot` source code into the chat window unless the user explicitly asks for it.** When `dot` is installed (`dot -Tsvg in.dot -o out.svg`), compile every DOT graph to verify zero syntax errors and surface only the rendered `.svg` link in Markdown. If `dot` is unavailable, link the saved `.dot` file path and mention installing Graphviz (`scoop install graphviz` / `winget install Graphviz.Graphviz`) in one short note without dumping the DOT code inline.
+- **Render diagrams inline as visible images and omit DOT source from chat**: Save `.dot` and compiled image files in the session artifact folder or an OS temp subfolder (never inside an untracked repository tree unless the user asks to save project docs), and **never paste raw `.dot` source code into chat unless explicitly asked**. When `dot` is installed, compile every DOT graph (`dot -Tsvg` / `dot -Tpng`) to verify zero syntax errors and **always render the diagram inline so the user views the image directly in the conversation—never output a bare file link in place of the diagram**. Choose an inline image embedding or native diagram block that renders visually under the active host's chat/Markdown constraints. If `dot` is unavailable, mention installing Graphviz (`scoop install graphviz` / `winget install Graphviz.Graphviz`) in one short note and use a faithful inline-rendered fallback without dumping raw DOT code.
 - **Mermaid `sequenceDiagram` rules**: Render sequence diagrams inline in ```` ```mermaid ```` blocks. Declare participants in left-to-right interaction order starting with the protagonist. Distinguish sync calls (`->>`), async/queued messages (`-)`), responses (`-->>`), and activation/waits. **Never put raw `;` in sequence messages or notes** (Mermaid parses `;` as a statement break—use `,`, `and`, or `#59;`).
-- **No visual-inspection loops**: Checking `dot -Tsvg` exit status validates syntax; do **not** open browsers, capture screenshots, or iterate on rendered pixels.
+- **No visual-inspection loops**: Checking `dot` exit status validates syntax; do **not** open browsers, capture screenshots, or iterate on rendered pixels.
 
 ## 5. Deliver and Verify
 
-1. **Deliver concisely**: State the scope and provenance in 1–2 sentences, present the selected diagrams, explain **only non-obvious consequences and trade-offs** (do not narrate arrows the diagram already shows), link key implementations in source, and disclose any material evidence gaps. Architecture explanation alone requires neither modifying nor running project code.
+1. **Deliver concisely**: State the scope and provenance in 1–2 sentences, present the inline-rendered diagrams and chosen flow breakdown, explain **only non-obvious consequences and trade-offs** (do not narrate arrows the diagram already shows), link key implementations in source, and disclose any material evidence gaps. Architecture explanation alone requires neither modifying nor running project code.
 2. **Pre-finish semantic & syntax check**:
-   - DOT compiles cleanly (or passes syntax check) with no `splines=ortho`, no hardcoded `:n/:s/:e/:w` ports on hubs/cross-cluster/backward edges, at most one `rank=same` helper per actor, no cross-cluster `rank=same`, and no unintended rank-0 orphan nodes; Mermaid sequences contain no raw `;`.
-   - Protagonist sits at `rank 0` with bold visual weight; main spine (`group="main"`, `weight=10`) runs straight without detours.
-   - Chosen Form, Level, and Mode match the prompt; channels use parallelograms, storage uses cylinders, and single bidirectional transports use one `dir=both` edge with explicit connection multiplicity.
+   - Every diagram is **rendered inline as a visible image/diagram** (never a bare file link or raw `.dot` dump); DOT compiles cleanly with no `splines=ortho`, no hardcoded `:n/:s/:e/:w` ports on hubs/cross-cluster/backward edges, at most one `rank=same` helper per actor, no cross-cluster `rank=same`, and no unintended rank-0 orphan nodes; Mermaid sequences contain no raw `;`.
+   - Boundary precedence is respected: explicit actor/merge filters win; explicit `High`/`Medium`/`Low` levels preserve all real boundaries along the scoped flow via `L0 → L1` nesting rather than silent hiding; unspecified levels merge off-task boundaries into `5–9` clear roles.
+   - Flow form matches complexity (`①–⑥` + list, plain-text list, Sequence, or Flowchart) without duplicating the same linear happy path across multiple diagrams; protagonist sits at `rank 0` with bold visual weight and a straight `group="main"`, `weight=10` spine.
+   - Channels use parallelograms, storage uses cylinders, and single bidirectional transports use one `dir=both` edge with explicit connection multiplicity.
    - User-mode DLLs sit inside loader processes while kernel drivers/virtual NICs sit outside across the User ↔ Kernel boundary (with control vs. data plane distinguished); listener/destination ports and bind scopes are identified (without cluttering ordinary senders with client source ports or socket nodes); P2P peers remain separate; coroutines are not drawn as OS threads; flowcharts distinguish definite rejection from unknown commit and route retries to the exact repeated step with real limits.
-   - Detail-mode capacities and appendix field tables appear **if and only if** requested, with working source links.
+   - Detail-mode capacities and appendix field tables appear **if and only if** requested, scoped strictly to visible boundaries, with working source links.
