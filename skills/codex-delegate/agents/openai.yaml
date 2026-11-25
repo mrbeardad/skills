@@ -1,0 +1,6 @@
+interface:
+  display_name: "Codex Delegate"
+  short_description: "Orchestrate local Codex CLI as a persistent Tech Lead subagent"
+
+policy:
+  allow_implicit_invocation: false

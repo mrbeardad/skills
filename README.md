@@ -26,3 +26,9 @@ Example prompts:
 
 - "Use explain-architecture to show the host-side architecture at low level."
 - "Use detail mode to include channel capacities and boundary data."
+
+## Codex Delegate
+
+[codex-delegate](skills/codex-delegate/SKILL.md) guides a Tech Lead agent in orchestrating the local `codex` CLI (`researcher` / `worker` / `reviewer`, defaulting to `gpt-6.2-astra` at `high` reasoning) via English task briefs and `session_id` reuse (`codex exec resume`), while keeping scope, test budgets, diff bloat checks, and user-facing communication with the Tech Lead.
+
+> Note: `codex-delegate` sets `policy.allow_implicit_invocation: false` in `agents/openai.yaml` so Codex itself does not auto-invoke it.
